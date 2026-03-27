@@ -1,0 +1,16 @@
+# Terraform build artifacts
+terraform/.terraform/
+terraform/terraform.tfstate
+terraform/terraform.tfstate.backup
+terraform/.terraform.lock.hcl
+
+# Sensitive generated files
+terraform/jumpbox_id_ed25519
+terraform/jumpbox_id_ed25519.pub
+
+# Generated output files (rebuilt on apply)
+terraform/hosts
+ansible/inventory/hosts.ini
+
+# Docs
+Readme.md
