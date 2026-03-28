@@ -2,18 +2,22 @@ terraform {
   required_providers {
     multipass = {
       source  = "larstobi/multipass"
-      version = "~> 1.0.3"
+      version = "~> 1.4"
+    }
+    local = {
+      source  = "hashicorp/local"
+      version = "~> 2.0"
     }
   }
 }
 
-resource "multipass_instance" "vm" {
-  name   = var.vm_name
-  cpus   = var.vcpu
-  memory = "${var.memory_mb}M"
-  image  = var.image
+locals {
+  cloudinit_path = "${path.module}/cloudinit-${var.vm_name}.yml"
+}
 
-  cloudinit_content = <<-EOF
+resource "local_file" "cloudinit" {
+  filename = local.cloudinit_path
+  content  = <<-EOF
     #cloud-config
     hostname: ${var.hostname}
     fqdn: ${var.hostname}
@@ -32,4 +36,12 @@ resource "multipass_instance" "vm" {
         root:debug123
       expire: false
   EOF
+}
+
+resource "multipass_instance" "vm" {
+  name          = var.vm_name
+  cpus          = var.vcpu
+  memory        = "${var.memory_mb}M"
+  image         = var.image
+  cloudinit_file = local_file.cloudinit.filename
 }
