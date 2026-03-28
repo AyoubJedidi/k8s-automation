@@ -1,5 +1,5 @@
 output "vm_ip" {
-  value = multipass_instance.vm.ipv4[0]
+  value = multipass_instance.vm.ipv4
 }
 
 output "vm_name" {
