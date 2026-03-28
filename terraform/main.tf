@@ -2,7 +2,7 @@ terraform {
   required_providers {
     multipass = {
       source  = "larstobi/multipass"
-      version = "~> 1.0.3"
+      version = "~> 1.4"
     }
     tls = {
       source  = "hashicorp/tls"
@@ -40,7 +40,7 @@ module "vms" {
 # ── Generate hosts file for jumpbox (/etc/hosts) ──────────────────────────────
 resource "local_file" "hosts" {
   filename = "${path.module}/hosts"
-  content  = templatefile("${path.module}/templates/hosts.tpl", {
+  content = templatefile("${path.module}/templates/hosts.tpl", {
     vms = { for k, v in module.vms : k => {
       ip       = v.vm_ip,
       hostname = var.vms[k].hostname
@@ -51,7 +51,7 @@ resource "local_file" "hosts" {
 # ── Generate Ansible inventory ─────────────────────────────────────────────────
 resource "local_file" "ansible_inventory" {
   filename = "${path.module}/../ansible/inventory/hosts.ini"
-  content  = templatefile("${path.module}/templates/inventory.tpl", {
+  content = templatefile("${path.module}/templates/inventory.tpl", {
     vms = { for k, v in module.vms : k => {
       ip       = v.vm_ip,
       hostname = var.vms[k].hostname
