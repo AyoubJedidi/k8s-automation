@@ -12,26 +12,7 @@ variable "memory_mb" {
   default = 512
 }
 
-variable "disk_size" {
-  description = "Disk size in bytes"
-  type        = number
-  default     = 10737418240 # 10GB
-}
-
-variable "base_image_path" {
-  description = "Path of the base volume on host (used as backing store)"
-  type        = string
-}
-
-variable "pool_name" {
-  type = string
-}
-
-variable "network_name" {
-  type = string
-}
-
-variable "mac_address" {
+variable "hostname" {
   type = string
 }
 
@@ -46,21 +27,7 @@ variable "jumpbox_ssh_public_key" {
   default     = ""
 }
 
-variable "hostname" {
-  type = string
-}
-
-variable "static_ip" {
-  description = "Static IP assigned via cloud-init netplan"
+variable "image" {
+  description = "Multipass image to use (e.g. 22.04)"
   type        = string
-}
-
-variable "network_gateway" {
-  type    = string
-  default = "192.168.122.1"
-}
-
-variable "network_prefix" {
-  type    = number
-  default = 24
 }
