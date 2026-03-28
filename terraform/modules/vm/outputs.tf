@@ -1,3 +1,7 @@
+output "vm_ip" {
+  value = multipass_instance.vm.ipv4[0]
+}
+
 output "vm_name" {
-  value = libvirt_domain.vm.name
+  value = multipass_instance.vm.name
 }
