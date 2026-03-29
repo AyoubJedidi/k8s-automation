@@ -12,6 +12,10 @@ terraform {
       source  = "hashicorp/local"
       version = "~> 2.0"
     }
+    null = {
+      source  = "hashicorp/null"
+      version = "~> 3.0"
+    }
   }
 }
 
@@ -35,7 +39,8 @@ module "vms" {
   image          = var.lxd_image
   ssh_public_key = trimspace(file(var.ssh_public_key_path))
 
-  jumpbox_ssh_public_key = each.key != "jumpbox" ? trimspace(tls_private_key.jumpbox.public_key_openssh) : ""
+  jumpbox_ssh_public_key  = each.key != "jumpbox" ? trimspace(tls_private_key.jumpbox.public_key_openssh) : ""
+  jumpbox_ssh_private_key = each.key == "jumpbox" ? tls_private_key.jumpbox.private_key_openssh : ""
 }
 
 # ── Generate hosts file for jumpbox (/etc/hosts) ──────────────────────────────
@@ -58,6 +63,23 @@ resource "local_file" "ansible_inventory" {
       hostname = var.vms[k].hostname
     } }
   })
+}
+
+# ── Wait for SSH to be ready on all VMs ───────────────────────────────────────
+resource "null_resource" "wait_for_ssh" {
+  for_each = var.vms
+
+  depends_on = [module.vms]
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      echo "Waiting for SSH on ${each.value.ip}..."
+      until ssh -o StrictHostKeyChecking=no -o ConnectTimeout=3 -o BatchMode=yes root@${each.value.ip} echo ok 2>/dev/null; do
+        sleep 3
+      done
+      echo "${each.key} (${each.value.ip}) is ready"
+    EOT
+  }
 }
 
 # ── Save jumpbox private key locally ──────────────────────────────────────────
