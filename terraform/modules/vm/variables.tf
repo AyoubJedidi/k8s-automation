@@ -28,6 +28,17 @@ variable "jumpbox_ssh_public_key" {
 }
 
 variable "image" {
-  description = "Multipass image to use (e.g. 22.04)"
+  description = "LXD image to use (e.g. ubuntu:22.04)"
   type        = string
+}
+
+variable "ip" {
+  description = "Static IP address for the VM (e.g. 10.142.131.10)"
+  type        = string
+}
+
+variable "gateway" {
+  description = "Gateway IP (lxdbr0 address)"
+  type        = string
+  default     = "10.142.131.1"
 }
