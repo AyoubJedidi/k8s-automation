@@ -27,6 +27,13 @@ variable "jumpbox_ssh_public_key" {
   default     = ""
 }
 
+variable "jumpbox_ssh_private_key" {
+  description = "Jumpbox SSH private key (written to jumpbox only)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 variable "image" {
   description = "LXD image to use (e.g. ubuntu:22.04)"
   type        = string
@@ -41,4 +48,16 @@ variable "gateway" {
   description = "Gateway IP (lxdbr0 address)"
   type        = string
   default     = "10.142.131.1"
+}
+
+variable "storage_pool" {
+  description = "LXD storage pool to use for the root disk"
+  type        = string
+  default     = "default"
+}
+
+variable "network" {
+  description = "LXD network bridge to attach the VM to"
+  type        = string
+  default     = "lxdk8s"
 }
