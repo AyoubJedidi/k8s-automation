@@ -10,7 +10,6 @@ terraform/jumpbox_id_ed25519.pub
 
 # Generated output files (rebuilt on apply)
 terraform/hosts
-terraform/modules/vm/cloudinit-*.yml
 terraform/.terraform.tfstate.lock.info
 ansible/inventory/hosts.ini
 

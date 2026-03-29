@@ -1,8 +1,8 @@
 terraform {
   required_providers {
-    multipass = {
-      source  = "larstobi/multipass"
-      version = "~> 1.4"
+    lxd = {
+      source  = "terraform-lxd/lxd"
+      version = "~> 1.10"
     }
     tls = {
       source  = "hashicorp/tls"
@@ -15,7 +15,7 @@ terraform {
   }
 }
 
-provider "multipass" {}
+provider "lxd" {}
 
 # ── Jumpbox SSH keypair ────────────────────────────────────────────────────────
 resource "tls_private_key" "jumpbox" {
@@ -31,7 +31,8 @@ module "vms" {
   vcpu           = each.value.vcpu
   memory_mb      = each.value.memory
   hostname       = each.value.hostname
-  image          = var.multipass_image
+  ip             = each.value.ip
+  image          = var.lxd_image
   ssh_public_key = trimspace(file(var.ssh_public_key_path))
 
   jumpbox_ssh_public_key = each.key != "jumpbox" ? trimspace(tls_private_key.jumpbox.public_key_openssh) : ""

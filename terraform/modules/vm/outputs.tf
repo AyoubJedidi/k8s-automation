@@ -1,7 +1,7 @@
 output "vm_ip" {
-  value = multipass_instance.vm.ipv4
+  value = var.ip
 }
 
 output "vm_name" {
-  value = multipass_instance.vm.name
+  value = lxd_instance.vm.name
 }
