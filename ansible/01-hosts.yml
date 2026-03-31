@@ -1,0 +1,22 @@
+---
+- name: Distribute /etc/hosts to all VMs
+  hosts: all
+  gather_facts: false
+
+  vars:
+    vm_hosts:
+      - { ip: "10.142.131.10", name: "jumpbox" }
+      - { ip: "10.142.131.11", name: "server" }
+      - { ip: "10.142.131.12", name: "node-0" }
+      - { ip: "10.142.131.13", name: "node-1" }
+
+  tasks:
+    - name: Set /etc/hosts with all VM hostnames
+      ansible.builtin.blockinfile:
+        path: /etc/hosts
+        block: |
+          {% for vm in vm_hosts %}
+          {{ vm.ip }}  {{ vm.name }}
+          {% endfor %}
+        marker: "# {mark} k8s cluster hosts"
+        create: false
