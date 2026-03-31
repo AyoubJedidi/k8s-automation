@@ -39,4 +39,9 @@ if ! grep -q '/snap/bin' ~/.bashrc; then
   echo "Added /snap/bin to ~/.bashrc"
 fi
 
+# Allow VM-to-VM traffic on the lxdk8s bridge (survives reboots)
+if ! sudo nft list table ip filter 2>/dev/null | grep -q 'iifname "lxdk8s" oifname "lxdk8s"'; then
+  sudo nft add rule ip filter FORWARD iifname "lxdk8s" oifname "lxdk8s" accept
+fi
+
 echo "Done. You can now run: terraform -chdir=terraform apply"
