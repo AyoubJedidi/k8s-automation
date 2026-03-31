@@ -43,17 +43,6 @@ module "vms" {
   jumpbox_ssh_private_key = each.key == "jumpbox" ? tls_private_key.jumpbox.private_key_openssh : ""
 }
 
-# ── Generate hosts file for jumpbox (/etc/hosts) ──────────────────────────────
-resource "local_file" "hosts" {
-  filename = "${path.module}/hosts"
-  content = templatefile("${path.module}/templates/hosts.tpl", {
-    vms = { for k, v in module.vms : k => {
-      ip       = v.vm_ip,
-      hostname = var.vms[k].hostname
-    } }
-  })
-}
-
 # ── Generate Ansible inventory ─────────────────────────────────────────────────
 resource "local_file" "ansible_inventory" {
   filename = "${path.module}/../ansible/inventory/hosts.ini"
@@ -65,7 +54,7 @@ resource "local_file" "ansible_inventory" {
   })
 }
 
-# ── Wait for SSH to be ready on all VMs ───────────────────────────────────────
+# ── Wait for SSH to be ready on all VMs ──────────────────────────────────────
 resource "null_resource" "wait_for_ssh" {
   for_each = var.vms
 
@@ -73,6 +62,7 @@ resource "null_resource" "wait_for_ssh" {
 
   provisioner "local-exec" {
     command = <<-EOT
+      ssh-keygen -R ${each.value.ip} 2>/dev/null || true
       echo "Waiting for SSH on ${each.value.ip}..."
       until ssh -o StrictHostKeyChecking=no -o ConnectTimeout=3 -o BatchMode=yes root@${each.value.ip} echo ok 2>/dev/null; do
         sleep 3
