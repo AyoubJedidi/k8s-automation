@@ -1,0 +1,214 @@
+---
+- name: Generate TLS certificates on jumpbox
+  hosts: jumpbox
+  gather_facts: false
+
+  vars:
+    cert_dir: /root/certs
+    server_ip: "10.142.131.11"
+    node0_ip: "10.142.131.12"
+    node1_ip: "10.142.131.13"
+    jumpbox_ip: "10.142.131.10"
+
+  tasks:
+    - name: Copy cfssl to jumpbox
+      ansible.builtin.copy:
+        src: /tmp/cfssl
+        dest: /usr/local/bin/cfssl
+        mode: "0755"
+
+    - name: Copy cfssljson to jumpbox
+      ansible.builtin.copy:
+        src: /tmp/cfssljson
+        dest: /usr/local/bin/cfssljson
+        mode: "0755"
+
+    - name: Create cert directory
+      ansible.builtin.file:
+        path: "{{ cert_dir }}"
+        state: directory
+        mode: "0700"
+
+    - name: Write CA config
+      ansible.builtin.copy:
+        dest: "{{ cert_dir }}/ca-config.json"
+        content: |
+          {
+            "signing": {
+              "default": { "expiry": "8760h" },
+              "profiles": {
+                "kubernetes": {
+                  "usages": ["signing","key encipherment","server auth","client auth"],
+                  "expiry": "8760h"
+                }
+              }
+            }
+          }
+
+    - name: Write CA CSR
+      ansible.builtin.copy:
+        dest: "{{ cert_dir }}/ca-csr.json"
+        content: |
+          {
+            "CN": "Kubernetes",
+            "key": { "algo": "rsa", "size": 2048 },
+            "names": [{ "C": "US", "L": "Portland", "O": "Kubernetes", "OU": "CA", "ST": "Oregon" }]
+          }
+
+    - name: Generate CA cert
+      ansible.builtin.shell: |
+        cd {{ cert_dir }}
+        cfssl gencert -initca ca-csr.json | cfssljson -bare ca
+      args:
+        creates: "{{ cert_dir }}/ca.pem"
+
+    # ── Admin client cert ─────────────────────────────────────────────────────
+    - name: Generate admin cert
+      ansible.builtin.shell: |
+        cd {{ cert_dir }}
+        cat > admin-csr.json <<EOF
+        {"CN":"admin","key":{"algo":"rsa","size":2048},"names":[{"C":"US","L":"Portland","O":"system:masters","OU":"Kubernetes The Hard Way","ST":"Oregon"}]}
+        EOF
+        cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json \
+          -profile=kubernetes admin-csr.json | cfssljson -bare admin
+      args:
+        creates: "{{ cert_dir }}/admin.pem"
+
+    # ── Kubelet certs (one per worker) ────────────────────────────────────────
+    - name: Generate node-0 kubelet cert
+      ansible.builtin.shell: |
+        cd {{ cert_dir }}
+        cat > node-0-csr.json <<EOF
+        {"CN":"system:node:node-0","key":{"algo":"rsa","size":2048},"names":[{"C":"US","L":"Portland","O":"system:nodes","OU":"Kubernetes The Hard Way","ST":"Oregon"}]}
+        EOF
+        cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json \
+          -hostname=node-0,{{ node0_ip }} -profile=kubernetes node-0-csr.json | cfssljson -bare node-0
+      args:
+        creates: "{{ cert_dir }}/node-0.pem"
+
+    - name: Generate node-1 kubelet cert
+      ansible.builtin.shell: |
+        cd {{ cert_dir }}
+        cat > node-1-csr.json <<EOF
+        {"CN":"system:node:node-1","key":{"algo":"rsa","size":2048},"names":[{"C":"US","L":"Portland","O":"system:nodes","OU":"Kubernetes The Hard Way","ST":"Oregon"}]}
+        EOF
+        cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json \
+          -hostname=node-1,{{ node1_ip }} -profile=kubernetes node-1-csr.json | cfssljson -bare node-1
+      args:
+        creates: "{{ cert_dir }}/node-1.pem"
+
+    # ── Controller manager cert ───────────────────────────────────────────────
+    - name: Generate kube-controller-manager cert
+      ansible.builtin.shell: |
+        cd {{ cert_dir }}
+        cat > kube-controller-manager-csr.json <<EOF
+        {"CN":"system:kube-controller-manager","key":{"algo":"rsa","size":2048},"names":[{"C":"US","L":"Portland","O":"system:kube-controller-manager","OU":"Kubernetes The Hard Way","ST":"Oregon"}]}
+        EOF
+        cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json \
+          -profile=kubernetes kube-controller-manager-csr.json | cfssljson -bare kube-controller-manager
+      args:
+        creates: "{{ cert_dir }}/kube-controller-manager.pem"
+
+    # ── Kube proxy cert ───────────────────────────────────────────────────────
+    - name: Generate kube-proxy cert
+      ansible.builtin.shell: |
+        cd {{ cert_dir }}
+        cat > kube-proxy-csr.json <<EOF
+        {"CN":"system:kube-proxy","key":{"algo":"rsa","size":2048},"names":[{"C":"US","L":"Portland","O":"system:node-proxier","OU":"Kubernetes The Hard Way","ST":"Oregon"}]}
+        EOF
+        cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json \
+          -profile=kubernetes kube-proxy-csr.json | cfssljson -bare kube-proxy
+      args:
+        creates: "{{ cert_dir }}/kube-proxy.pem"
+
+    # ── Scheduler cert ────────────────────────────────────────────────────────
+    - name: Generate kube-scheduler cert
+      ansible.builtin.shell: |
+        cd {{ cert_dir }}
+        cat > kube-scheduler-csr.json <<EOF
+        {"CN":"system:kube-scheduler","key":{"algo":"rsa","size":2048},"names":[{"C":"US","L":"Portland","O":"system:kube-scheduler","OU":"Kubernetes The Hard Way","ST":"Oregon"}]}
+        EOF
+        cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json \
+          -profile=kubernetes kube-scheduler-csr.json | cfssljson -bare kube-scheduler
+      args:
+        creates: "{{ cert_dir }}/kube-scheduler.pem"
+
+    # ── API server cert ───────────────────────────────────────────────────────
+    - name: Generate kubernetes API server cert
+      ansible.builtin.shell: |
+        cd {{ cert_dir }}
+        cat > kubernetes-csr.json <<EOF
+        {"CN":"kubernetes","key":{"algo":"rsa","size":2048},"names":[{"C":"US","L":"Portland","O":"Kubernetes","OU":"Kubernetes The Hard Way","ST":"Oregon"}]}
+        EOF
+        cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json \
+          -hostname=10.32.0.1,{{ server_ip }},127.0.0.1,kubernetes,kubernetes.default,kubernetes.default.svc,kubernetes.default.svc.cluster,kubernetes.svc.cluster.local \
+          -profile=kubernetes kubernetes-csr.json | cfssljson -bare kubernetes
+      args:
+        creates: "{{ cert_dir }}/kubernetes.pem"
+
+    # ── Service account key pair ──────────────────────────────────────────────
+    - name: Generate service-account cert
+      ansible.builtin.shell: |
+        cd {{ cert_dir }}
+        cat > service-account-csr.json <<EOF
+        {"CN":"service-accounts","key":{"algo":"rsa","size":2048},"names":[{"C":"US","L":"Portland","O":"Kubernetes","OU":"Kubernetes The Hard Way","ST":"Oregon"}]}
+        EOF
+        cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json \
+          -profile=kubernetes service-account-csr.json | cfssljson -bare service-account
+      args:
+        creates: "{{ cert_dir }}/service-account.pem"
+
+- name: Fetch certs from jumpbox to host
+  hosts: jumpbox
+  gather_facts: false
+
+  tasks:
+    - name: Fetch all certs to local /tmp/k8s-certs/
+      ansible.builtin.fetch:
+        src: "/root/certs/{{ item }}"
+        dest: /tmp/k8s-certs/
+        flat: true
+      loop:
+        - ca.pem
+        - ca-key.pem
+        - node-0.pem
+        - node-0-key.pem
+        - node-1.pem
+        - node-1-key.pem
+        - kubernetes.pem
+        - kubernetes-key.pem
+        - service-account.pem
+        - service-account-key.pem
+
+- name: Distribute certs to worker nodes
+  hosts: workers
+  gather_facts: false
+
+  tasks:
+    - name: Copy CA and kubelet certs to worker
+      ansible.builtin.copy:
+        src: "/tmp/k8s-certs/{{ item }}"
+        dest: "/root/{{ item }}"
+        mode: "0600"
+      loop:
+        - ca.pem
+        - "{{ hostname }}.pem"
+        - "{{ hostname }}-key.pem"
+
+- name: Distribute certs to control plane
+  hosts: control_plane
+  gather_facts: false
+
+  tasks:
+    - name: Copy CA, API server and service-account certs to server
+      ansible.builtin.copy:
+        src: "/tmp/k8s-certs/{{ item }}"
+        dest: "/root/{{ item }}"
+        mode: "0600"
+      loop:
+        - ca.pem
+        - ca-key.pem
+        - kubernetes.pem
+        - kubernetes-key.pem
+        - service-account.pem
+        - service-account-key.pem
