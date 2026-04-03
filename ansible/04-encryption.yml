@@ -1,0 +1,44 @@
+---
+- name: Generate data encryption config on jumpbox
+  hosts: jumpbox
+  gather_facts: false
+
+  tasks:
+    - name: Generate encryption key
+      ansible.builtin.shell: head -c 32 /dev/urandom | base64
+      register: encryption_key
+      changed_when: false
+
+    - name: Write encryption-config.yaml
+      ansible.builtin.copy:
+        dest: /root/encryption-config.yaml
+        mode: "0600"
+        content: |
+          kind: EncryptionConfig
+          apiVersion: v1
+          resources:
+            - resources:
+                - secrets
+              providers:
+                - aescbc:
+                    keys:
+                      - name: key1
+                        secret: {{ encryption_key.stdout }}
+                - identity: {}
+
+    - name: Fetch encryption config to host
+      ansible.builtin.fetch:
+        src: /root/encryption-config.yaml
+        dest: /tmp/k8s-configs/encryption-config.yaml
+        flat: true
+
+- name: Copy encryption config to control plane
+  hosts: control_plane
+  gather_facts: false
+
+  tasks:
+    - name: Copy encryption-config.yaml to server
+      ansible.builtin.copy:
+        src: /tmp/k8s-configs/encryption-config.yaml
+        dest: /root/encryption-config.yaml
+        mode: "0600"
