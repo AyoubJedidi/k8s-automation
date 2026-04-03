@@ -1,0 +1,78 @@
+---
+- name: Bootstrap etcd on control plane
+  hosts: control_plane
+  gather_facts: false
+
+  tasks:
+    - name: Copy etcd binary
+      ansible.builtin.copy:
+        src: /tmp/etcd
+        dest: /usr/local/bin/etcd
+        mode: "0755"
+
+    - name: Copy etcdctl binary
+      ansible.builtin.copy:
+        src: /tmp/etcdctl
+        dest: /usr/local/bin/etcdctl
+        mode: "0755"
+
+    - name: Create etcd directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0700"
+      loop:
+        - /etc/etcd
+        - /var/lib/etcd
+
+    - name: Copy CA and API server certs to /etc/etcd
+      ansible.builtin.copy:
+        src: "/tmp/k8s-certs/{{ item.src }}"
+        dest: "/etc/etcd/{{ item.dest }}"
+        mode: "0600"
+      loop:
+        - { src: ca.pem,          dest: ca.crt }
+        - { src: kubernetes.pem,  dest: kube-api-server.crt }
+        - { src: kubernetes-key.pem, dest: kube-api-server.key }
+
+    - name: Create etcd systemd unit
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/etcd.service
+        content: |
+          [Unit]
+          Description=etcd
+          Documentation=https://github.com/etcd-io/etcd
+
+          [Service]
+          Type=notify
+          ExecStart=/usr/local/bin/etcd \
+            --name controller \
+            --initial-advertise-peer-urls http://127.0.0.1:2380 \
+            --listen-peer-urls http://127.0.0.1:2380 \
+            --listen-client-urls http://127.0.0.1:2379 \
+            --advertise-client-urls http://127.0.0.1:2379 \
+            --initial-cluster-token etcd-cluster-0 \
+            --initial-cluster controller=http://127.0.0.1:2380 \
+            --initial-cluster-state new \
+            --data-dir=/var/lib/etcd
+          Restart=on-failure
+          RestartSec=5
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Enable and start etcd
+      ansible.builtin.systemd:
+        name: etcd
+        daemon_reload: true
+        enabled: true
+        state: started
+
+    - name: Verify etcd member list
+      ansible.builtin.shell: etcdctl member list
+      register: etcd_members
+      changed_when: false
+
+    - name: Show etcd members
+      ansible.builtin.debug:
+        msg: "{{ etcd_members.stdout }}"
