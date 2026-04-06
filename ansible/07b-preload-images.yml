@@ -1,0 +1,64 @@
+---
+- name: Pre-load container images on workers
+  hosts: workers
+  gather_facts: false
+
+  tasks:
+    - name: Copy ctr binary to worker
+      ansible.builtin.copy:
+        src: /usr/bin/ctr
+        dest: /usr/local/bin/ctr
+        mode: "0755"
+
+    - name: Copy pause image to worker
+      ansible.builtin.copy:
+        src: /tmp/k8s-images/pause-3.10.tar.gz
+        dest: /tmp/pause-3.10.tar.gz
+
+    - name: Copy nginx image to worker
+      ansible.builtin.copy:
+        src: /tmp/k8s-images/nginx-latest.tar.gz
+        dest: /tmp/nginx-latest.tar.gz
+
+    - name: Import pause image into containerd
+      ansible.builtin.shell: |
+        ctr -n k8s.io images import /tmp/pause-3.10.tar.gz
+      changed_when: true
+
+    - name: Import nginx image into containerd
+      ansible.builtin.shell: |
+        ctr -n k8s.io images import /tmp/nginx-latest.tar.gz
+      changed_when: true
+
+    - name: Update containerd config with sandbox_image
+      ansible.builtin.copy:
+        dest: /etc/containerd/config.toml
+        content: |
+          version = 2
+
+          [plugins."io.containerd.grpc.v1.cri"]
+            sandbox_image = "registry.k8s.io/pause:3.10"
+            [plugins."io.containerd.grpc.v1.cri".containerd]
+              snapshotter = "overlayfs"
+              default_runtime_name = "runc"
+            [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+              runtime_type = "io.containerd.runc.v2"
+            [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
+              SystemdCgroup = true
+          [plugins."io.containerd.grpc.v1.cni"]
+            bin_dir = "/opt/cni/bin"
+            conf_dir = "/etc/cni/net.d"
+
+    - name: Restart containerd
+      ansible.builtin.systemd:
+        name: containerd
+        state: restarted
+
+    - name: Verify images are loaded
+      ansible.builtin.shell: ctr -n k8s.io images list | grep -E "pause|nginx"
+      register: images
+      changed_when: false
+
+    - name: Show loaded images
+      ansible.builtin.debug:
+        msg: "{{ images.stdout_lines }}"

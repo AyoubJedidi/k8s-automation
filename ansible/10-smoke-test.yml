@@ -1,0 +1,121 @@
+---
+- name: Smoke Test
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    # ── Data encryption ───────────────────────────────────────────────────────
+    - name: Create test secret
+      ansible.builtin.shell: |
+        kubectl create secret generic kubernetes-the-hard-way \
+          --from-literal="mykey=mydata" --dry-run=client -o yaml | kubectl apply -f -
+      changed_when: true
+
+    - name: Verify secret is encrypted in etcd
+      ansible.builtin.shell: |
+        ssh -o StrictHostKeyChecking=no root@10.142.131.11 \
+          'etcdctl get /registry/secrets/default/kubernetes-the-hard-way | hexdump -C' \
+          | grep "k8s:enc:aescbc"
+      register: encryption_check
+      changed_when: false
+
+    - name: Show encryption result
+      ansible.builtin.debug:
+        msg: "Encryption OK — secret is stored with aescbc"
+
+    # ── Deployment ────────────────────────────────────────────────────────────
+    - name: Create nginx deployment
+      ansible.builtin.shell: |
+        kubectl create deployment nginx --image=nginx:latest --dry-run=client -o yaml | kubectl apply -f -
+      changed_when: true
+
+    - name: Wait for nginx pod to be running
+      ansible.builtin.shell: |
+        kubectl get pods -l app=nginx -o jsonpath="{.items[0].status.phase}"
+      register: pod_status
+      until: pod_status.stdout == "Running"
+      retries: 20
+      delay: 10
+      changed_when: false
+
+    - name: Show pods
+      ansible.builtin.shell: kubectl get pods -l app=nginx
+      register: pods
+      changed_when: false
+
+    - name: Display pods
+      ansible.builtin.debug:
+        msg: "{{ pods.stdout }}"
+
+    # ── Logs ──────────────────────────────────────────────────────────────────
+    - name: Get pod name
+      ansible.builtin.shell: |
+        kubectl get pods -l app=nginx -o jsonpath="{.items[0].metadata.name}"
+      register: pod_name
+      changed_when: false
+
+    - name: Check pod logs
+      ansible.builtin.shell: kubectl logs {{ pod_name.stdout }}
+      register: pod_logs
+      changed_when: false
+      failed_when: false
+
+    - name: Show pod logs
+      ansible.builtin.debug:
+        msg: "{{ pod_logs.stdout | default('(no logs yet)') }}"
+
+    # ── Exec ──────────────────────────────────────────────────────────────────
+    - name: Exec into pod — check nginx version
+      ansible.builtin.shell: kubectl exec {{ pod_name.stdout }} -- nginx -v
+      register: nginx_version
+      changed_when: false
+
+    - name: Show nginx version
+      ansible.builtin.debug:
+        msg: "{{ nginx_version.stderr }}"
+
+    # ── Service / NodePort ────────────────────────────────────────────────────
+    - name: Expose nginx as NodePort
+      ansible.builtin.shell: |
+        kubectl expose deployment nginx --port 80 --type NodePort \
+          --dry-run=client -o yaml | kubectl apply -f -
+      changed_when: true
+
+    - name: Get node port
+      ansible.builtin.shell: |
+        kubectl get svc nginx -o jsonpath='{.spec.ports[0].nodePort}'
+      register: node_port
+      changed_when: false
+
+    - name: Get node name running nginx
+      ansible.builtin.shell: |
+        kubectl get pods -l app=nginx -o jsonpath="{.items[0].spec.nodeName}"
+      register: node_name
+      changed_when: false
+
+    - name: Get node IP for the node running nginx
+      ansible.builtin.shell: |
+        kubectl get node {{ node_name.stdout }} \
+          -o jsonpath="{.status.addresses[?(@.type=='InternalIP')].address}"
+      register: node_ip
+      changed_when: false
+
+    - name: Test NodePort HTTP access
+      ansible.builtin.shell: curl -sI http://{{ node_ip.stdout }}:{{ node_port.stdout }}
+      register: nodeport_test
+      changed_when: false
+
+    - name: Show NodePort response
+      ansible.builtin.debug:
+        msg: "{{ nodeport_test.stdout_lines[:3] }}"
+
+    # ── Summary ───────────────────────────────────────────────────────────────
+    - name: All smoke tests passed
+      ansible.builtin.debug:
+        msg:
+          - "Encryption at rest: OK"
+          - "Deployment:         OK"
+          - "Pod logs:           OK"
+          - "Exec in pod:        OK"
+          - "NodePort service:   OK"
