@@ -1,0 +1,38 @@
+---
+- name: Provision pod network routes
+  hosts: control_plane:workers
+  gather_facts: false
+
+  vars:
+    node0_ip: "10.142.131.12"
+    node0_subnet: "10.200.0.0/24"
+    node1_ip: "10.142.131.13"
+    node1_subnet: "10.200.1.0/24"
+
+  tasks:
+    - name: Add pod network route to node-0 (on server and node-1)
+      ansible.builtin.shell: |
+        ip route replace {{ node0_subnet }} via {{ node0_ip }}
+      when: hostname != "node-0"
+      changed_when: true
+
+    - name: Add pod network route to node-1 (on server and node-0)
+      ansible.builtin.shell: |
+        ip route replace {{ node1_subnet }} via {{ node1_ip }}
+      when: hostname != "node-1"
+      changed_when: true
+
+- name: Verify routes and node status
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Check nodes are Ready
+      ansible.builtin.shell: kubectl get nodes
+      register: nodes
+      changed_when: false
+
+    - name: Show nodes
+      ansible.builtin.debug:
+        msg: "{{ nodes.stdout }}"
