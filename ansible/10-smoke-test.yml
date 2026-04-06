@@ -27,7 +27,9 @@
     # ── Deployment ────────────────────────────────────────────────────────────
     - name: Create nginx deployment
       ansible.builtin.shell: |
-        kubectl create deployment nginx --image=nginx:latest --dry-run=client -o yaml | kubectl apply -f -
+        kubectl create deployment nginx --image=nginx:latest --dry-run=client -o yaml \
+          | sed 's/imagePullPolicy: Always/imagePullPolicy: IfNotPresent/' \
+          | kubectl apply -f -
       changed_when: true
 
     - name: Wait for nginx pod to be running
