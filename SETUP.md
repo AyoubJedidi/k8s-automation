@@ -71,7 +71,94 @@ From the jumpbox, SSH to other VMs using the auto-provisioned key:
 ssh root@10.142.131.11   # no password needed — key is pre-installed
 ```
 
-### 5. Tear down
+### 5. Configure the Kubernetes cluster (Ansible)
+
+#### Prerequisites
+
+Install Ansible and required tools on your host machine:
+
+```bash
+# Ansible
+pip3 install ansible
+
+# kubectl (used by the localhost playbooks)
+curl -LO "https://dl.k8s.io/release/$(curl -Ls https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+rm kubectl
+```
+
+Also install `cfssl` and `cfssljson` for certificate generation (used by the certificates playbook):
+
+```bash
+wget -q https://github.com/cloudflare/cfssl/releases/download/v1.6.4/cfssl_1.6.4_linux_amd64 -O cfssl
+wget -q https://github.com/cloudflare/cfssl/releases/download/v1.6.4/cfssljson_1.6.4_linux_amd64 -O cfssljson
+chmod +x cfssl cfssljson
+sudo mv cfssl cfssljson /usr/local/bin/
+```
+
+> **Note:** The VMs have **no internet access**. All binaries and packages are downloaded on your host and pushed to the VMs by Ansible. You do not need to install anything on the VMs manually.
+
+#### Pre-load container images
+
+Because the worker nodes cannot reach the internet, container images must be pulled on the host and imported into the workers before pods can run:
+
+```bash
+# Pull images on the host (requires Docker)
+docker pull registry.k8s.io/pause:3.10
+docker pull nginx:latest
+
+# Save them for Ansible to copy
+mkdir -p /tmp/k8s-images
+docker save registry.k8s.io/pause:3.10 | gzip > /tmp/k8s-images/pause-3.10.tar.gz
+docker save nginx:latest               | gzip > /tmp/k8s-images/nginx-latest.tar.gz
+```
+
+#### Run the playbooks
+
+From the repo root:
+
+```bash
+cd ansible
+
+ansible-playbook -i inventory/hosts.ini 01-hosts.yml          # /etc/hosts on all VMs
+ansible-playbook -i inventory/hosts.ini 02-certificates.yml   # TLS certs (CA + all components)
+ansible-playbook -i inventory/hosts.ini 03-kubeconfigs.yml    # kubeconfig files
+ansible-playbook -i inventory/hosts.ini 04-encryption.yml     # encryption-at-rest config
+ansible-playbook -i inventory/hosts.ini 05-etcd.yml           # etcd on control plane
+ansible-playbook -i inventory/hosts.ini 06-control-plane.yml  # kube-apiserver, scheduler, controller-manager
+ansible-playbook -i inventory/hosts.ini 07-workers.yml        # containerd, kubelet, kube-proxy on workers
+ansible-playbook -i inventory/hosts.ini 07b-preload-images.yml # import container images into workers
+ansible-playbook -i inventory/hosts.ini 08-kubectl-access.yml # configure kubectl on your host
+ansible-playbook -i inventory/hosts.ini 09-pod-network-routes.yml # pod CIDR routes
+ansible-playbook -i inventory/hosts.ini 10-smoke-test.yml     # end-to-end smoke test
+```
+
+Or run them all at once with the site playbook:
+
+```bash
+ansible-playbook -i inventory/hosts.ini site.yml
+```
+
+After the smoke test passes you should see:
+
+```
+"Encryption at rest: OK"
+"Deployment:         OK"
+"Pod logs:           OK"
+"Exec in pod:        OK"
+"NodePort service:   OK"
+```
+
+#### Verify the cluster
+
+```bash
+kubectl get nodes          # both node-0 and node-1 should show Ready
+kubectl get pods -A        # no pods in error state
+```
+
+---
+
+### 6. Tear down
 
 ```bash
 terraform destroy
